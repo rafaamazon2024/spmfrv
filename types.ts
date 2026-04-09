@@ -38,6 +38,7 @@ export interface Material {
   gradient: string;
   modules?: Module[]; // For full courses
   createdAt?: string;
+  imageFit?: 'cover' | 'contain';
 }
 
 export interface AppSettings {
@@ -46,6 +47,7 @@ export interface AppSettings {
   heroImageUrl: string;
   heroButtonText: string;
   heroButtonLink: string;
+  featuredCourseId?: string;
 }
 
 export interface User {

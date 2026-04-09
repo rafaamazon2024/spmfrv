@@ -82,10 +82,15 @@ const uploadFile = async (file: File, path: string): Promise<string> => {
       }
 
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const fileRef = ref(storage, `${path}/${Date.now()}_${sanitizedName}`);
+      const fileName = `${Date.now()}_${sanitizedName}`;
+      const fileRef = ref(storage, `${path}/${fileName}`);
       console.log("Referência do arquivo criada:", fileRef.fullPath);
       
-      const result = await uploadBytes(fileRef, file);
+      const metadata = {
+        contentType: file.type,
+      };
+
+      const result = await uploadBytes(fileRef, file, metadata);
       console.log("Upload concluído com sucesso:", result.metadata.fullPath);
       
       const url = await getDownloadURL(fileRef);
@@ -98,7 +103,7 @@ const uploadFile = async (file: File, path: string): Promise<string> => {
       const message = error.message || "Erro desconhecido";
       
       if (code === 'storage/unauthorized') {
-        throw new Error("Sem permissão para upload no Firebase Storage. Verifique as regras de segurança.");
+        throw new Error("Sem permissão para upload. Você precisa ativar o Firebase Storage no Console e definir as regras de segurança como públicas ou para usuários autenticados.");
       } else if (code === 'storage/canceled') {
         throw new Error("Upload cancelado pelo usuário.");
       } else if (code === 'storage/retry-limit-exceeded') {
@@ -149,8 +154,7 @@ const App: React.FC = () => {
   const [items, setItems] = useState<Material[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [activeCategory, setActiveCategory] = useState('Todos');
-  const [isAdminTab, setIsAdminTab] = useState<'library' | 'users'>('library');
+  const [isAdminTab, setIsAdminTab] = useState<'library' | 'users' | 'settings'>('library');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeTab, setActiveTab] = useState<'todos' | 'curso' | 'ebook'>('todos');
@@ -170,7 +174,8 @@ const App: React.FC = () => {
     imageUrl: '',
     videoUrl: '',
     views: 0,
-    modules: []
+    modules: [],
+    imageFit: 'cover'
   });
   const [toasts, setToasts] = useState<{id: string, message: string, type?: 'success' | 'error'}[]>([]);
 
@@ -242,8 +247,16 @@ const App: React.FC = () => {
   useEffect(() => {
     let unsubscribeMaterials: (() => void) | undefined;
     let unsubscribeUsers: (() => void) | undefined;
+    let unsubscribeSettings: (() => void) | undefined;
 
     if (currentUser) {
+      // Fetch Settings
+      unsubscribeSettings = onSnapshot(doc(db, 'settings', 'app'), (docSnap) => {
+        if (docSnap.exists()) {
+          setSettings(docSnap.data() as AppSettings);
+        }
+      });
+
       // Fetch Materials
       const materialsPath = 'materials';
       const qMaterials = query(collection(db, materialsPath), orderBy('title'));
@@ -279,8 +292,22 @@ const App: React.FC = () => {
     return () => {
       if (unsubscribeMaterials) unsubscribeMaterials();
       if (unsubscribeUsers) unsubscribeUsers();
+      if (unsubscribeSettings) unsubscribeSettings();
     };
   }, [currentUser]);
+
+  const handleSaveSettings = async (newSettings: AppSettings) => {
+    if (!currentUser?.isAdmin) return;
+    setIsLoading(true);
+    try {
+      await setDoc(doc(db, 'settings', 'app'), newSettings);
+      addToast("Configurações salvas com sucesso!");
+    } catch (e: any) {
+      addToast("Erro ao salvar configurações", 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleUpdateUserStatus = async (userId: string, status: 'active' | 'blocked' | 'pending') => {
     if (!currentUser?.isAdmin) return;
@@ -373,7 +400,8 @@ const App: React.FC = () => {
         imageUrl: '',
         videoUrl: '',
         views: 0,
-        modules: []
+        modules: [],
+        imageFit: 'cover'
       });
     } catch (e: any) {
       console.error("Erro ao adicionar material:", e);
@@ -466,16 +494,15 @@ const App: React.FC = () => {
     setNewMaterial({ ...newMaterial, modules });
   };
 
-  // Fix: Defining filteredItems to resolve reference error on line 177
+  // Filter items based on search
   const filteredItems = useMemo(() => {
     return items.filter(item => {
-      const matchesCategory = activeCategory === 'Todos' || item.category === activeCategory;
-      const matchesTab = activeTab === 'todos' || item.type === activeTab;
-      const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          item.description.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesTab && matchesSearch;
+      const title = item.title?.toLowerCase() || '';
+      const description = item.description?.toLowerCase() || '';
+      const search = searchTerm.toLowerCase();
+      return title.includes(search) || description.includes(search);
     });
-  }, [items, activeCategory, searchTerm, activeTab]);
+  }, [items, searchTerm]);
 
   const currentLessonData = useMemo(() => {
     if (!selectedItem || !selectedLesson) return null;
@@ -558,72 +585,92 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col lg:flex-row">
-      {/* MOBILE HEADER */}
-      <header className="lg:hidden p-6 border-b border-white/10 flex justify-between items-center bg-zinc-950 sticky top-0 z-[100]">
-        <h2 className="text-xl font-black text-purple-500">VITALÍCIO</h2>
-        <button 
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 hover:bg-white/5 rounded-lg transition-all"
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Grid size={24} />}
-        </button>
-      </header>
-
-      {/* SIDEBAR (Desktop & Mobile Overlay) */}
-      <aside className={`
-        fixed inset-0 lg:relative lg:inset-auto z-[110] lg:z-0
-        w-full lg:w-80 border-r border-white/10 p-8 flex flex-col gap-8 bg-zinc-950 lg:glass
-        transition-transform duration-300 lg:translate-x-0
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <div className="flex justify-between items-center lg:block">
-          <h2 className="text-2xl font-black text-purple-500">VITALÍCIO</h2>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2">
-            <X size={24} />
-          </button>
+    <div className="min-h-screen bg-[#050505] text-white flex flex-col">
+      {/* HEADER PRINCIPAL */}
+      <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-2xl border-b border-white/5 px-6 lg:px-12 py-5 flex items-center justify-between">
+        <div className="flex items-center gap-5">
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+            <div className="relative w-12 h-12 bg-black rounded-2xl flex items-center justify-center font-black text-2xl border border-white/10">
+              <span className="bg-clip-text text-transparent bg-gradient-to-br from-white to-gray-500">S</span>
+            </div>
+          </div>
+          <div className="hidden sm:block">
+            <h1 className="text-lg font-black uppercase tracking-[-0.05em] leading-none mb-1">SPMFRV</h1>
+            <p className="text-[10px] text-purple-500/80 font-black uppercase tracking-[0.2em]">Premium Experience</p>
+          </div>
         </div>
-        <div className="flex-1 space-y-2 overflow-y-auto">
+
+        <div className="flex-1 max-w-xl mx-8 hidden md:block">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-purple-500 transition-colors" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar curso ou material..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-purple-500/50 focus:bg-white/10 transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
           {currentUser?.isAdmin && (
-            <div className="mb-6 space-y-2">
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-4 mb-2">Administração</p>
+            <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-2xl border border-white/5">
               <button 
-                onClick={() => { setIsAdminTab('library'); setIsMobileMenuOpen(false); }} 
-                className={`w-full text-left p-4 rounded-xl text-sm font-bold flex items-center gap-3 ${isAdminTab === 'library' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
+                onClick={() => setIsAdminTab('library')}
+                className={`p-2.5 rounded-xl transition-all ${isAdminTab === 'library' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-500 hover:text-white'}`}
+                title="Biblioteca"
               >
-                <LayoutDashboard size={18} /> Biblioteca
+                <Grid size={18} />
               </button>
               <button 
-                onClick={() => { setIsAdminTab('users'); setIsMobileMenuOpen(false); }} 
-                className={`w-full text-left p-4 rounded-xl text-sm font-bold flex items-center gap-3 ${isAdminTab === 'users' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
+                onClick={() => setIsAdminTab('users')}
+                className={`p-2.5 rounded-xl transition-all ${isAdminTab === 'users' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-500 hover:text-white'}`}
+                title="Usuários"
               >
-                <Users size={18} /> Usuários
+                <Users size={18} />
+              </button>
+              <button 
+                onClick={() => setIsAdminTab('settings')}
+                className={`p-2.5 rounded-xl transition-all ${isAdminTab === 'settings' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-500 hover:text-white'}`}
+                title="Configurações"
+              >
+                <SettingsIcon size={18} />
               </button>
             </div>
           )}
-
-          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-4 mb-2">Categorias</p>
-          <button 
-            onClick={() => { setActiveCategory('Todos'); setIsAdminTab('library'); setIsMobileMenuOpen(false); }} 
-            className={`w-full text-left p-4 rounded-xl text-sm font-bold ${activeCategory === 'Todos' && isAdminTab === 'library' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
-          >
-            Todos
-          </button>
-          {CATEGORIES.map(c => (
-            <button 
-              key={c} 
-              onClick={() => { setActiveCategory(c); setIsMobileMenuOpen(false); }} 
-              className={`w-full text-left p-4 rounded-xl text-sm font-bold ${activeCategory === c ? 'bg-purple-600' : 'hover:bg-white/5'}`}
-            >
-              {c}
+          <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold">{currentUser.name}</p>
+              <p className="text-[10px] text-gray-500 uppercase font-black">{currentUser.isAdmin ? 'Admin' : 'Membro'}</p>
+            </div>
+            <button onClick={() => signOut(auth)} className="p-3 bg-white/5 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-all">
+              <LogOut size={20} />
             </button>
-          ))}
+          </div>
         </div>
-        <button onClick={() => signOut(auth)} className="p-4 bg-red-500/10 text-red-500 rounded-xl font-bold flex items-center gap-2"><LogOut size={18} /> Sair</button>
-      </aside>
+      </header>
+
+      {/* MOBILE SEARCH */}
+      <div className="md:hidden p-4 border-b border-white/5 bg-black/30">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+          <input 
+            type="text" 
+            placeholder="Buscar..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm"
+          />
+        </div>
+      </div>
 
       {/* CONTENT */}
-      <main className="flex-1 p-6 lg:p-12 overflow-y-auto">
+      <main className="flex-1 p-6 lg:p-12 max-w-[1800px] mx-auto w-full overflow-y-auto relative">
+        {/* Subtle Grain Overlay */}
+        <div className="fixed inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')] z-50"></div>
+        
         {isAdminTab === 'users' && currentUser?.isAdmin ? (
           <div className="space-y-8 animate-fade-in">
             <header className="flex justify-between items-center">
@@ -690,28 +737,174 @@ const App: React.FC = () => {
               </table>
             </div>
           </div>
+        ) : isAdminTab === 'settings' && currentUser?.isAdmin ? (
+          <div className="max-w-4xl mx-auto space-y-12 animate-fade-in">
+            <header>
+              <h1 className="text-4xl font-black mb-2">Configurações do Sistema</h1>
+              <p className="text-gray-500">Personalize o banner de destaque e outras opções.</p>
+            </header>
+
+            <div className="space-y-8">
+              <section className="glass p-8 rounded-[2.5rem] border border-white/10 space-y-6">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-purple-500">
+                  <Sparkles size={20} /> Banner de Destaque
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Título do Banner</label>
+                    <input 
+                      type="text"
+                      value={settings.heroTitle}
+                      onChange={e => setSettings({...settings, heroTitle: e.target.value})}
+                      className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Subtítulo</label>
+                    <input 
+                      type="text"
+                      value={settings.heroSubtitle}
+                      onChange={e => setSettings({...settings, heroSubtitle: e.target.value})}
+                      className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">URL da Imagem de Fundo</label>
+                  <div className="flex gap-4">
+                    <input 
+                      type="url"
+                      value={settings.heroImageUrl}
+                      onChange={e => setSettings({...settings, heroImageUrl: e.target.value})}
+                      className="flex-1 bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                    <label className="p-4 bg-white/5 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 transition-all">
+                      <UploadCloud size={20} />
+                      <input type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload(e, 'image', (url) => setSettings({...settings, heroImageUrl: url}))} />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Texto do Botão</label>
+                    <input 
+                      type="text"
+                      value={settings.heroButtonText}
+                      onChange={e => setSettings({...settings, heroButtonText: e.target.value})}
+                      className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Link do Botão (Opcional)</label>
+                    <input 
+                      type="text"
+                      value={settings.heroButtonLink}
+                      onChange={e => setSettings({...settings, heroButtonLink: e.target.value})}
+                      placeholder="#vitrine"
+                      className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Curso em Destaque (Ação do Botão)</label>
+                  <select 
+                    value={settings.featuredCourseId || ''}
+                    onChange={e => setSettings({...settings, featuredCourseId: e.target.value})}
+                    className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                  >
+                    <option value="">Nenhum curso selecionado</option>
+                    {items.map(item => (
+                      <option key={item.id} value={item.id}>
+                        [{item.type.toUpperCase()}] {item.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-500">Ao selecionar um curso, o botão do banner abrirá as aulas dele automaticamente.</p>
+                </div>
+
+                <button 
+                  onClick={() => handleSaveSettings(settings)}
+                  disabled={isLoading}
+                  className="w-full py-4 bg-purple-600 hover:bg-purple-700 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-purple-600/20"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+                  SALVAR CONFIGURAÇÕES
+                </button>
+              </section>
+            </div>
+          </div>
         ) : (
           <>
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-12">
-              <h1 className="text-3xl lg:text-4xl font-black">Biblioteca</h1>
+            {/* HERO BANNER */}
+            {!searchTerm && (
+              <section className="mb-16 animate-fade-in">
+                <div className="relative h-[400px] lg:h-[500px] rounded-[3rem] overflow-hidden border border-white/5 group shadow-2xl">
+                  <img 
+                    src={settings.heroImageUrl} 
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-[3s] ease-out"
+                    referrerPolicy="no-referrer"
+                    alt="Hero"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent" />
+                  
+                  <div className="absolute inset-0 p-8 lg:p-16 flex flex-col justify-center max-w-2xl">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 rounded-full border border-purple-500/30 text-[10px] font-black uppercase tracking-[0.2em] mb-6 w-fit animate-bounce-slow">
+                      <Star size={12} fill="currentColor" /> Destaque da Semana
+                    </div>
+                    <h2 className="text-4xl lg:text-6xl font-black mb-4 leading-tight whitespace-pre-line">
+                      {settings.heroTitle}
+                    </h2>
+                    <p className="text-gray-400 text-lg lg:text-xl mb-8 font-medium">
+                      {settings.heroSubtitle}
+                    </p>
+                    <div className="flex flex-wrap gap-4">
+                      <button 
+                        onClick={() => {
+                          const featured = items.find(i => i.id === settings.featuredCourseId);
+                          if (featured) {
+                            setSelectedItem(featured);
+                            if (featured.modules && featured.modules.length > 0 && featured.modules[0].lessons.length > 0) {
+                              setSelectedLesson({ moduleId: featured.modules[0].id, lessonId: featured.modules[0].lessons[0].id });
+                            }
+                          }
+                        }}
+                        className="px-8 py-4 bg-white text-black font-black rounded-2xl flex items-center gap-3 hover:scale-105 transition-all shadow-xl shadow-white/10"
+                      >
+                        <PlayCircle size={20} /> {settings.heroButtonText}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-12">
+              <div>
+                <h1 className="text-4xl lg:text-5xl font-black tracking-tighter mb-2">Biblioteca de Conteúdo</h1>
+                <p className="text-gray-500 font-medium">Explore nossos cursos e materiais exclusivos.</p>
+              </div>
               {currentUser?.isAdmin && (
                 <button 
                   onClick={() => setIsAddModalOpen(true)}
-                  className="w-full sm:w-auto p-4 bg-purple-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all"
+                  className="w-full sm:w-auto px-8 py-4 bg-purple-600 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-purple-700 transition-all shadow-xl shadow-purple-600/20 active:scale-95"
                 >
-                  <Plus size={18} /> Novo Material
+                  <Plus size={20} /> Novo Material
                 </button>
               )}
             </header>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
               {filteredItems.map(item => (
                 <div 
                   key={item.id} 
-                  className="glass-card rounded-[2rem] overflow-hidden border border-white/10 group cursor-pointer" 
+                  className="group relative bg-[#0A0A0A] rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-purple-500/50 transition-all duration-500 cursor-pointer flex flex-col hover:shadow-[0_0_40px_rgba(147,51,234,0.1)]" 
                   onClick={() => {
                     setSelectedItem(item);
-                    setIsEditingCourse(false); // Sempre abre o visualizador primeiro
+                    setIsEditingCourse(false);
                     if (item.modules && item.modules.length > 0 && item.modules[0].lessons.length > 0) {
                       setSelectedLesson({ moduleId: item.modules[0].id, lessonId: item.modules[0].lessons[0].id });
                     } else {
@@ -719,11 +912,11 @@ const App: React.FC = () => {
                     }
                   }}
                 >
-                  <div className="h-48 overflow-hidden bg-gray-800">
+                  <div className="aspect-[16/10] overflow-hidden relative">
                     {item.imageUrl ? (
                       <img 
                         src={item.imageUrl} 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-all" 
+                        className={`w-full h-full ${item.imageFit === 'contain' ? 'object-contain bg-zinc-900' : 'object-cover'} group-hover:scale-105 transition-transform duration-700`} 
                         referrerPolicy="no-referrer"
                         alt={item.title}
                         onError={(e) => {
@@ -731,19 +924,31 @@ const App: React.FC = () => {
                         }}
                       />
                     ) : (
-                      <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-50`}>
+                      <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-40`}>
                         <ImageIcon size={48} className="text-white/20" />
                       </div>
                     )}
-                  </div>
-                  <div className="p-8">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-purple-400 bg-purple-400/10 px-2 py-1 rounded-md">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+                    <div className="absolute top-4 left-4">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-white bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
                         {item.type}
                       </span>
                     </div>
-                    <h3 className="text-xl font-bold mb-4 line-clamp-1">{item.title}</h3>
-                    <button className="flex items-center gap-2 text-purple-400 font-bold">Acessar <ArrowRight size={16} /></button>
+                  </div>
+                  <div className="p-8 flex-1 flex flex-col">
+                    <h3 className="text-xl font-bold mb-3 line-clamp-2 group-hover:text-purple-400 transition-colors">{item.title}</h3>
+                    <p className="text-gray-500 text-sm line-clamp-2 mb-6 flex-1">
+                      {item.description || "Acesse agora este conteúdo exclusivo da nossa plataforma."}
+                    </p>
+                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
+                        <PlayCircle size={14} className="text-purple-500" />
+                        {item.modules?.reduce((acc, m) => acc + m.lessons.length, 0) || 0} Aulas
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-purple-600 transition-all duration-300">
+                        <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -970,29 +1175,52 @@ const App: React.FC = () => {
                   className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500 h-32 resize-none"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-500 uppercase">Capa do Curso</label>
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 lg:gap-8">
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <input 
-                        type="url"
-                        value={selectedItem.imageUrl}
-                        onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})}
-                        className="flex-1 bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500"
-                        placeholder="URL da imagem ou use o upload ->"
-                      />
-                      <label className="p-4 bg-zinc-900 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 transition-all flex items-center justify-center gap-2">
-                        <UploadCloud size={20} className={isUploading ? 'animate-bounce text-purple-500' : ''} />
-                        <span className="text-sm font-bold">Upload</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload(e, 'image', (url) => {
-                          console.log("Upload finalizado, atualizando selectedItem com URL:", url);
-                          setSelectedItem(prev => prev ? {...prev, imageUrl: url} : null);
-                        })} />
-                      </label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between">
+                    <span>Capa do Curso</span>
+                    <span className="text-purple-500 lowercase">URL ou Upload</span>
+                  </label>
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 lg:gap-8">
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="relative flex-1">
+                          <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                          <input 
+                            type="url"
+                            value={selectedItem.imageUrl}
+                            onChange={e => setSelectedItem({...selectedItem, imageUrl: e.target.value})}
+                            className="w-full bg-zinc-900 p-4 pl-12 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                            placeholder="Cole o link da imagem aqui..."
+                          />
+                        </div>
+                        <label className="p-4 bg-purple-600/10 border border-purple-500/30 text-purple-400 rounded-xl cursor-pointer hover:bg-purple-600 hover:text-white transition-all flex items-center justify-center gap-2 shrink-0">
+                          <UploadCloud size={20} className={isUploading ? 'animate-bounce' : ''} />
+                          <span className="text-sm font-bold">{isUploading ? 'Subindo...' : 'Fazer Upload'}</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload(e, 'image', (url) => {
+                            setSelectedItem(prev => prev ? {...prev, imageUrl: url} : null);
+                          })} />
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-gray-500 italic">Dica: Se o upload falhar, você pode hospedar a imagem em sites como ImgBB ou PostImages e colar o link acima.</p>
+                      
+                      <div className="flex items-center gap-4 p-4 bg-zinc-900/50 rounded-xl border border-white/5">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Ajuste da Imagem:</span>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setSelectedItem({...selectedItem, imageFit: 'cover'})}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${selectedItem.imageFit !== 'contain' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-500 hover:text-white'}`}
+                          >
+                            PREENCHER (CORTAR)
+                          </button>
+                          <button 
+                            onClick={() => setSelectedItem({...selectedItem, imageFit: 'contain'})}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${selectedItem.imageFit === 'contain' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-500 hover:text-white'}`}
+                          >
+                            INTEIRA (SEM CORTES)
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-gray-500 italic">Dica: Use imagens horizontais (16:9) para melhor resultado.</p>
-                  </div>
                   
                   <div className="aspect-video bg-white/5 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center relative group">
                     {isUploading ? (
@@ -1003,7 +1231,7 @@ const App: React.FC = () => {
                     ) : selectedItem.imageUrl ? (
                       <img 
                         src={selectedItem.imageUrl} 
-                        className="w-full h-full object-cover" 
+                        className={`w-full h-full ${selectedItem.imageFit === 'contain' ? 'object-contain bg-zinc-900' : 'object-cover'}`} 
                         referrerPolicy="no-referrer"
                         alt="Preview"
                         onError={(e) => {

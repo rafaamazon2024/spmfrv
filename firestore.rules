@@ -114,6 +114,11 @@ service cloud.firestore {
       }
     }
 
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     // Default deny
     match /{allPaths=**} {
       allow read, write: if false;
