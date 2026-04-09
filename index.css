@@ -75,3 +75,48 @@
 .animate-bounce-slow {
   animation: bounce-slow 3s infinite ease-in-out;
 }
+
+@keyframes rotate-bg {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-rotate-bg {
+  animation: rotate-bg 8s linear infinite;
+}
+
+.neon-border {
+  box-shadow: 0 0 15px rgba(147, 51, 234, 0.3);
+}
+
+.card-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-glow::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    transparent,
+    rgba(147, 51, 234, 0.1),
+    rgba(147, 51, 234, 0.2),
+    rgba(147, 51, 234, 0.1),
+    transparent
+  );
+  animation: rotate-bg 6s linear infinite;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.card-content {
+  position: relative;
+  z-index: 1;
+  background: #0A0A0A;
+  height: 100%;
+  width: 100%;
+}

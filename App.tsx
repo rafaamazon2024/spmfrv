@@ -19,7 +19,8 @@ import {
   onSnapshot,
   query,
   orderBy,
-  storage
+  storage,
+  deleteDoc
 } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
@@ -473,6 +474,22 @@ const App: React.FC = () => {
     } catch (e: any) {
       handleFirestoreError(e, OperationType.WRITE, 'materials');
       addToast("Erro ao salvar curso", 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteMaterial = async (materialId: string) => {
+    if (!currentUser?.isAdmin) return;
+    if (!window.confirm("Tem certeza que deseja excluir este material? Esta ação não pode ser desfeita.")) return;
+    
+    setIsLoading(true);
+    try {
+      await deleteDoc(doc(db, 'materials', materialId));
+      addToast("Material excluído com sucesso!");
+    } catch (e: any) {
+      console.error("Erro ao excluir material:", e);
+      addToast("Erro ao excluir material", 'error');
     } finally {
       setIsLoading(false);
     }
@@ -981,7 +998,7 @@ const App: React.FC = () => {
               {filteredItems.map(item => (
                 <div 
                   key={item.id} 
-                  className="group relative bg-[#0A0A0A] rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-purple-500/50 transition-all duration-500 cursor-pointer flex flex-col hover:shadow-[0_0_40px_rgba(147,51,234,0.1)]" 
+                  className="group relative rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-purple-500/50 transition-all duration-500 cursor-pointer flex flex-col card-glow neon-border" 
                   onClick={() => {
                     if (item.isExternal && item.externalUrl) {
                       window.open(item.externalUrl, '_blank');
@@ -996,41 +1013,71 @@ const App: React.FC = () => {
                     }
                   }}
                 >
-                  <div className="aspect-[16/10] overflow-hidden relative">
-                    {item.imageUrl ? (
-                      <img 
-                        src={item.imageUrl} 
-                        className={`w-full h-full ${item.imageFit === 'contain' ? 'object-contain bg-zinc-900' : 'object-cover'} group-hover:scale-105 transition-transform duration-700`} 
-                        referrerPolicy="no-referrer"
-                        alt={item.title}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://picsum.photos/seed/${item.id}/800/450`;
-                        }}
-                      />
-                    ) : (
-                      <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-40`}>
-                        <ImageIcon size={48} className="text-white/20" />
+                  <div className="card-content flex flex-col h-full">
+                    <div className="aspect-[16/10] overflow-hidden relative">
+                      {item.imageUrl ? (
+                        <img 
+                          src={item.imageUrl} 
+                          className={`w-full h-full ${item.imageFit === 'contain' ? 'object-contain bg-zinc-900' : 'object-cover'} group-hover:scale-105 transition-transform duration-700`} 
+                          referrerPolicy="no-referrer"
+                          alt={item.title}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `https://picsum.photos/seed/${item.id}/800/450`;
+                          }}
+                        />
+                      ) : (
+                        <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-40`}>
+                          <ImageIcon size={48} className="text-white/20" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+                      
+                      {/* Admin Actions Overlay */}
+                      {currentUser?.isAdmin && (
+                        <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all z-20">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedItem(item);
+                              setIsEditingCourse(true);
+                            }}
+                            className="p-2 bg-white/10 backdrop-blur-md hover:bg-purple-600 rounded-full transition-all border border-white/10"
+                            title="Editar Curso"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMaterial(item.id);
+                            }}
+                            className="p-2 bg-white/10 backdrop-blur-md hover:bg-red-600 rounded-full transition-all border border-white/10"
+                            title="Excluir Curso"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="absolute top-4 left-4">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-white bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+                          {item.type}
+                        </span>
                       </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
-                    <div className="absolute top-4 left-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-white bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-                        {item.type}
-                      </span>
                     </div>
-                  </div>
-                  <div className="p-8 flex-1 flex flex-col">
-                    <h3 className="text-xl font-bold mb-3 line-clamp-2 group-hover:text-purple-400 transition-colors">{item.title}</h3>
-                    <p className="text-gray-500 text-sm line-clamp-2 mb-6 flex-1">
-                      {item.description || "Acesse agora este conteúdo exclusivo da nossa plataforma."}
-                    </p>
-                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                      <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
-                        <PlayCircle size={14} className="text-purple-500" />
-                        {item.modules?.reduce((acc, m) => acc + m.lessons.length, 0) || 0} Aulas
-                      </div>
-                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-purple-600 transition-all duration-300">
-                        <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                    <div className="p-8 flex-1 flex flex-col">
+                      <h3 className="text-xl font-bold mb-3 line-clamp-2 group-hover:text-purple-400 transition-colors">{item.title}</h3>
+                      <p className="text-gray-500 text-sm line-clamp-2 mb-6 flex-1">
+                        {item.description || "Acesse agora este conteúdo exclusivo da nossa plataforma."}
+                      </p>
+                      <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                        <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
+                          <PlayCircle size={14} className="text-purple-500" />
+                          {item.modules?.reduce((acc, m) => acc + m.lessons.length, 0) || 0} Aulas
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-purple-600 transition-all duration-300">
+                          <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                        </div>
                       </div>
                     </div>
                   </div>
