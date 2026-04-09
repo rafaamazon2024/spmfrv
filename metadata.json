@@ -1,0 +1,8 @@
+{
+  "name": "ACESSO VITALÍCIO",
+  "description": "Uma plataforma educacional premium com design ultra moderno, cursos e e-books exclusivos com foco em desenvolvimento pessoal e finanças.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

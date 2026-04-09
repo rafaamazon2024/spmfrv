@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "isAdmin": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["id", "name", "email", "isAdmin"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Educational content like courses or ebooks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["curso", "ebook"] },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "videoUrl": { "type": "string", "format": "uri" },
+        "views": { "type": "number" },
+        "gradient": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "type", "category", "description", "imageUrl", "views"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "User comment on a material",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "userName", "text", "timestamp", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/materials/{materialId}": {
+      "schema": "Material",
+      "description": "Library materials"
+    },
+    "/materials/{materialId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments for a specific material"
+    }
+  }
+}

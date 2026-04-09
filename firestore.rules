@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - email: string (required, format: email)
+    //   - isAdmin: boolean (required)
+    //   - role: string (enum: ['admin', 'user'])
+    //
+    // Collection: materials
+    // Document ID: {materialId}
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required)
+    //   - type: string (required, enum: ['curso', 'ebook'])
+    //   - category: string (required)
+    //   - description: string (required)
+    //   - imageUrl: string (required, format: uri)
+    //   - videoUrl: string (optional, format: uri)
+    //   - views: number (required)
+    //   - gradient: string (optional)
+    //   - createdAt: string (optional, format: date-time)
+    //   - modules: list (optional, complex structure)
+    //
+    // Collection: materials/{materialId}/comments
+    // Document ID: {commentId}
+    // Fields:
+    //   - id: string (required)
+    //   - userName: string (required)
+    //   - text: string (required)
+    //   - timestamp: string (required, format: date-time)
+    //   - userId: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "rafa.araujo.27@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'isAdmin']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             data.isAdmin is bool;
+    }
+
+    function isValidMaterial(data) {
+      return data.keys().hasAll(['id', 'title', 'type', 'category', 'views']) &&
+             data.id is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.type in ['curso', 'ebook'] &&
+             data.category is string &&
+             (!('description' in data) || (data.description is string && data.description.size() < 5000)) &&
+             (!('imageUrl' in data) || data.imageUrl == "" || (data.imageUrl is string && (data.imageUrl.matches("^https://.*") || data.imageUrl.matches("^http://.*")))) &&
+             data.views is number;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['id', 'userName', 'text', 'timestamp', 'userId']) &&
+             data.id is string &&
+             data.userName is string &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 1000 &&
+             data.userId == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /materials/{materialId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidMaterial(request.resource.data);
+      allow update: if (isAdmin() && isValidMaterial(request.resource.data)) || 
+                      (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+      allow delete: if isAdmin();
+
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidComment(request.resource.data);
+        allow update: if isAuthenticated() && isOwner(resource.data.userId) && isValidComment(request.resource.data);
+        allow delete: if isAdmin() || (isAuthenticated() && isOwner(resource.data.userId));
+      }
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
