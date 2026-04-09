@@ -64,7 +64,8 @@ service cloud.firestore {
              data.id is string &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
-             data.isAdmin is bool;
+             data.isAdmin is bool &&
+             (!('status' in data) || data.status in ['pending', 'active', 'blocked']);
     }
 
     function isValidMaterial(data) {
@@ -91,7 +92,8 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
       allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
       allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
       allow delete: if isAdmin();

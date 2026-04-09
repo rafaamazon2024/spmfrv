@@ -147,8 +147,10 @@ const App: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   
   const [items, setItems] = useState<Material[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activeCategory, setActiveCategory] = useState('Todos');
+  const [isAdminTab, setIsAdminTab] = useState<'library' | 'users'>('library');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeTab, setActiveTab] = useState<'todos' | 'curso' | 'ebook'>('todos');
@@ -195,25 +197,39 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const isAdmin = user.email === 'admin@academia.com' || user.email === 'rafa.araujo.27@gmail.com';
-        const userData = {
+        
+        // Get user data from Firestore to check status
+        let userStatus: 'pending' | 'active' | 'blocked' = 'pending';
+        try {
+          const userDoc = await getDocFromServer(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            userStatus = userDoc.data().status || 'pending';
+          } else {
+            // New user, create with pending status
+            await setDoc(doc(db, 'users', user.uid), {
+              id: user.uid,
+              name: user.displayName || user.email?.split('@')[0] || 'Membro',
+              email: user.email || '',
+              isAdmin,
+              role: isAdmin ? 'admin' : 'user',
+              status: isAdmin ? 'active' : 'pending',
+              createdAt: new Date().toISOString()
+            });
+            userStatus = isAdmin ? 'active' : 'pending';
+          }
+        } catch (e) {
+          console.error("Error checking user status:", e);
+        }
+
+        const userData: User = {
           id: user.uid,
           name: user.displayName || user.email?.split('@')[0] || 'Membro',
           email: user.email || '',
-          isAdmin
+          isAdmin,
+          status: userStatus,
+          role: isAdmin ? 'admin' : 'user'
         };
         setCurrentUser(userData);
-        
-        // Sync user to Firestore
-        try {
-          const path = `users/${user.uid}`;
-          await setDoc(doc(db, 'users', user.uid), {
-            ...userData,
-            role: isAdmin ? 'admin' : 'user'
-          }, { merge: true });
-        } catch (e) {
-          console.error("Error syncing user:", e);
-          // We don't throw here to not break the app if user sync fails
-        }
       } else {
         setCurrentUser(null);
       }
@@ -223,38 +239,58 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const fetchData = () => {
-    if (!currentUser) return;
-    
-    const path = 'materials';
-    const q = query(collection(db, path), orderBy('title'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(docSnap => {
-        const docData = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...docData,
-          gradient: docData.gradient || getRandomGradient(),
-          comments: []
-        } as unknown as Material;
-      });
-      setItems(data);
-      setDbStatus('connected');
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
-      setDbStatus('error');
-    });
-
-    return unsubscribe;
-  };
-
   useEffect(() => {
-    const unsubscribe = fetchData();
+    let unsubscribeMaterials: (() => void) | undefined;
+    let unsubscribeUsers: (() => void) | undefined;
+
+    if (currentUser) {
+      // Fetch Materials
+      const materialsPath = 'materials';
+      const qMaterials = query(collection(db, materialsPath), orderBy('title'));
+      unsubscribeMaterials = onSnapshot(qMaterials, (snapshot) => {
+        const data = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+          gradient: docSnap.data().gradient || getRandomGradient(),
+        } as unknown as Material));
+        setItems(data);
+        setDbStatus('connected');
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, materialsPath);
+        setDbStatus('error');
+      });
+
+      // Fetch Users (Admin only)
+      if (currentUser.isAdmin) {
+        const usersPath = 'users';
+        const qUsers = query(collection(db, usersPath), orderBy('email'));
+        unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
+          const data = snapshot.docs.map(docSnap => ({
+            id: docSnap.id,
+            ...docSnap.data()
+          } as User));
+          setAllUsers(data);
+        }, (error) => {
+          console.error("Error fetching users:", error);
+        });
+      }
+    }
+
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeMaterials) unsubscribeMaterials();
+      if (unsubscribeUsers) unsubscribeUsers();
     };
   }, [currentUser]);
+
+  const handleUpdateUserStatus = async (userId: string, status: 'active' | 'blocked' | 'pending') => {
+    if (!currentUser?.isAdmin) return;
+    try {
+      await setDoc(doc(db, 'users', userId), { status }, { merge: true });
+      addToast(`Status do usuário atualizado para ${status}`);
+    } catch (e: any) {
+      addToast("Erro ao atualizar status", 'error');
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -464,6 +500,7 @@ const App: React.FC = () => {
   if (isAppInit) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-purple-600" size={40} /></div>;
 
   if (!currentUser) {
+    // ... (Login screen remains same)
     return (
       <div className="min-h-screen flex items-center justify-center bg-black p-6">
         <div className="glass max-w-md w-full p-8 lg:p-12 rounded-[2.5rem] lg:rounded-[3rem] text-center space-y-8 bg-zinc-950 lg:bg-white/5">
@@ -486,6 +523,35 @@ const App: React.FC = () => {
           <div className="fixed top-4 right-4 space-y-2">
             {toasts.map(t => <div key={t.id} className={`p-4 rounded-xl text-xs font-bold ${t.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>{t.message}</div>)}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentUser.status === 'pending' && !currentUser.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black p-6">
+        <div className="glass max-w-md w-full p-12 rounded-[3rem] text-center space-y-8">
+          <div className="w-20 h-20 bg-purple-600/20 rounded-full flex items-center justify-center mx-auto">
+            <Loader2 className="animate-spin text-purple-500" size={40} />
+          </div>
+          <h1 className="text-3xl font-black">ACESSO PENDENTE</h1>
+          <p className="text-gray-400">Olá, {currentUser.name}! Seu cadastro foi recebido, mas o administrador ainda precisa liberar seu acesso.</p>
+          <p className="text-sm text-purple-400 font-bold">Aguarde a liberação para acessar os conteúdos.</p>
+          <button onClick={() => signOut(auth)} className="w-full py-4 bg-white/5 text-white font-bold rounded-xl hover:bg-white/10 transition-all">Sair da Conta</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentUser.status === 'blocked' && !currentUser.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black p-6">
+        <div className="glass max-w-md w-full p-12 rounded-[3rem] text-center space-y-8">
+          <AlertCircle size={64} className="mx-auto text-red-500" />
+          <h1 className="text-3xl font-black text-red-500">ACESSO BLOQUEADO</h1>
+          <p className="text-gray-400">Sua conta foi suspensa. Entre em contato com o suporte para mais informações.</p>
+          <button onClick={() => signOut(auth)} className="w-full py-4 bg-white/5 text-white font-bold rounded-xl hover:bg-white/10 transition-all">Sair da Conta</button>
         </div>
       </div>
     );
@@ -518,9 +584,28 @@ const App: React.FC = () => {
           </button>
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto">
+          {currentUser?.isAdmin && (
+            <div className="mb-6 space-y-2">
+              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-4 mb-2">Administração</p>
+              <button 
+                onClick={() => { setIsAdminTab('library'); setIsMobileMenuOpen(false); }} 
+                className={`w-full text-left p-4 rounded-xl text-sm font-bold flex items-center gap-3 ${isAdminTab === 'library' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
+              >
+                <LayoutDashboard size={18} /> Biblioteca
+              </button>
+              <button 
+                onClick={() => { setIsAdminTab('users'); setIsMobileMenuOpen(false); }} 
+                className={`w-full text-left p-4 rounded-xl text-sm font-bold flex items-center gap-3 ${isAdminTab === 'users' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
+              >
+                <Users size={18} /> Usuários
+              </button>
+            </div>
+          )}
+
+          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-4 mb-2">Categorias</p>
           <button 
-            onClick={() => { setActiveCategory('Todos'); setIsMobileMenuOpen(false); }} 
-            className={`w-full text-left p-4 rounded-xl text-sm font-bold ${activeCategory === 'Todos' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
+            onClick={() => { setActiveCategory('Todos'); setIsAdminTab('library'); setIsMobileMenuOpen(false); }} 
+            className={`w-full text-left p-4 rounded-xl text-sm font-bold ${activeCategory === 'Todos' && isAdminTab === 'library' ? 'bg-purple-600' : 'hover:bg-white/5'}`}
           >
             Todos
           </button>
@@ -539,63 +624,132 @@ const App: React.FC = () => {
 
       {/* CONTENT */}
       <main className="flex-1 p-6 lg:p-12 overflow-y-auto">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-12">
-          <h1 className="text-3xl lg:text-4xl font-black">Biblioteca</h1>
-          {currentUser?.isAdmin && (
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="w-full sm:w-auto p-4 bg-purple-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all"
-            >
-              <Plus size={18} /> Novo Material
-            </button>
-          )}
-        </header>
+        {isAdminTab === 'users' && currentUser?.isAdmin ? (
+          <div className="space-y-8 animate-fade-in">
+            <header className="flex justify-between items-center">
+              <h1 className="text-3xl lg:text-4xl font-black">Gerenciar Usuários</h1>
+              <div className="bg-white/5 px-4 py-2 rounded-full text-xs font-bold text-gray-400">
+                {allUsers.length} usuários cadastrados
+              </div>
+            </header>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-          {filteredItems.map(item => (
-            <div 
-              key={item.id} 
-              className="glass-card rounded-[2rem] overflow-hidden border border-white/10 group cursor-pointer" 
-              onClick={() => {
-                setSelectedItem(item);
-                if (currentUser?.isAdmin) {
-                  setIsEditingCourse(true);
-                } else {
-                  if (item.modules && item.modules.length > 0 && item.modules[0].lessons.length > 0) {
-                    setSelectedLesson({ moduleId: item.modules[0].id, lessonId: item.modules[0].lessons[0].id });
-                  }
-                }
-              }}
-            >
-              <div className="h-48 overflow-hidden bg-gray-800">
-                {item.imageUrl ? (
-                  <img 
-                    src={item.imageUrl} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-all" 
-                    referrerPolicy="no-referrer"
-                    alt={item.title}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = `https://picsum.photos/seed/${item.id}/800/450`;
-                    }}
-                  />
-                ) : (
-                  <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-50`}>
-                    <ImageIcon size={48} className="text-white/20" />
-                  </div>
-                )}
-              </div>
-              <div className="p-8">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-purple-400 bg-purple-400/10 px-2 py-1 rounded-md">
-                    {item.type}
-                  </span>
-                </div>
-                <h3 className="text-xl font-bold mb-4 line-clamp-1">{item.title}</h3>
-                <button className="flex items-center gap-2 text-purple-400 font-bold">Acessar <ArrowRight size={16} /></button>
-              </div>
+            <div className="glass rounded-[2rem] overflow-hidden border border-white/10">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5">
+                    <th className="p-6 text-[10px] font-black uppercase tracking-widest text-gray-500">Usuário</th>
+                    <th className="p-6 text-[10px] font-black uppercase tracking-widest text-gray-500">E-mail</th>
+                    <th className="p-6 text-[10px] font-black uppercase tracking-widest text-gray-500">Status</th>
+                    <th className="p-6 text-[10px] font-black uppercase tracking-widest text-gray-500 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {allUsers.map(user => (
+                    <tr key={user.id} className="hover:bg-white/5 transition-all">
+                      <td className="p-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-purple-600/20 rounded-full flex items-center justify-center text-purple-500 font-bold">
+                            {user.name[0]}
+                          </div>
+                          <span className="font-bold">{user.name}</span>
+                        </div>
+                      </td>
+                      <td className="p-6 text-gray-400 text-sm">{user.email}</td>
+                      <td className="p-6">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                          user.status === 'active' ? 'bg-green-500/20 text-green-500' :
+                          user.status === 'blocked' ? 'bg-red-500/20 text-red-500' :
+                          'bg-amber-500/20 text-amber-500'
+                        }`}>
+                          {user.status || 'pending'}
+                        </span>
+                      </td>
+                      <td className="p-6 text-right space-x-2">
+                        {user.status !== 'active' && (
+                          <button 
+                            onClick={() => handleUpdateUserStatus(user.id, 'active')}
+                            className="p-2 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"
+                            title="Ativar Acesso"
+                          >
+                            <CheckCircle size={18} />
+                          </button>
+                        )}
+                        {user.status !== 'blocked' && user.email !== currentUser.email && (
+                          <button 
+                            onClick={() => handleUpdateUserStatus(user.id, 'blocked')}
+                            className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"
+                            title="Bloquear Acesso"
+                          >
+                            <X size={18} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <>
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-12">
+              <h1 className="text-3xl lg:text-4xl font-black">Biblioteca</h1>
+              {currentUser?.isAdmin && (
+                <button 
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="w-full sm:w-auto p-4 bg-purple-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all"
+                >
+                  <Plus size={18} /> Novo Material
+                </button>
+              )}
+            </header>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+              {filteredItems.map(item => (
+                <div 
+                  key={item.id} 
+                  className="glass-card rounded-[2rem] overflow-hidden border border-white/10 group cursor-pointer" 
+                  onClick={() => {
+                    setSelectedItem(item);
+                    setIsEditingCourse(false); // Sempre abre o visualizador primeiro
+                    if (item.modules && item.modules.length > 0 && item.modules[0].lessons.length > 0) {
+                      setSelectedLesson({ moduleId: item.modules[0].id, lessonId: item.modules[0].lessons[0].id });
+                    } else {
+                      setSelectedLesson(null);
+                    }
+                  }}
+                >
+                  <div className="h-48 overflow-hidden bg-gray-800">
+                    {item.imageUrl ? (
+                      <img 
+                        src={item.imageUrl} 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-all" 
+                        referrerPolicy="no-referrer"
+                        alt={item.title}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://picsum.photos/seed/${item.id}/800/450`;
+                        }}
+                      />
+                    ) : (
+                      <div className={`w-full h-full bg-gradient-to-br ${item.gradient} flex items-center justify-center opacity-50`}>
+                        <ImageIcon size={48} className="text-white/20" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-8">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-purple-400 bg-purple-400/10 px-2 py-1 rounded-md">
+                        {item.type}
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-bold mb-4 line-clamp-1">{item.title}</h3>
+                    <button className="flex items-center gap-2 text-purple-400 font-bold">Acessar <ArrowRight size={16} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </main>
 
       {/* VIEWER DE CURSO (ALUNO) */}
@@ -621,10 +775,19 @@ const App: React.FC = () => {
           `}>
             <div className="p-6 lg:p-8 border-b border-white/10 flex justify-between items-center lg:block">
               <div className="lg:block">
-                <button onClick={() => setSelectedItem(null)} className="hidden lg:flex items-center gap-2 text-gray-400 hover:text-white transition-all mb-6">
+                <button onClick={() => setSelectedItem(null)} className="hidden lg:flex items-center gap-2 text-gray-400 hover:text-white transition-all mb-4">
                   <RotateCcw size={16} /> Voltar à Biblioteca
                 </button>
-                <h2 className="text-xl lg:text-2xl font-black line-clamp-2">{selectedItem.title}</h2>
+                <h2 className="text-xl lg:text-2xl font-black line-clamp-2 mb-4">{selectedItem.title}</h2>
+                
+                {currentUser?.isAdmin && (
+                  <button 
+                    onClick={() => setIsEditingCourse(true)}
+                    className="w-full py-3 bg-purple-600/20 text-purple-400 border border-purple-500/30 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-purple-600 hover:text-white transition-all mb-4"
+                  >
+                    <Edit3 size={14} /> MODO EDITOR
+                  </button>
+                )}
               </div>
               <button onClick={() => setIsViewerMenuOpen(false)} className="lg:hidden p-2">
                 <X size={24} />

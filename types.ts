@@ -53,6 +53,8 @@ export interface User {
   name: string;
   email: string;
   isAdmin: boolean;
+  status?: 'pending' | 'active' | 'blocked';
+  role?: 'admin' | 'user';
 }
 
 export const CATEGORIES = [
