@@ -22,7 +22,7 @@ import {
   storage
 } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
 import { setDoc, doc, getDocFromServer } from 'firebase/firestore';
 import { User, Material, AppSettings, CATEGORIES, CATEGORY_ICONS, MaterialType } from './types';
 
@@ -359,6 +359,22 @@ const App: React.FC = () => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!authEmail) {
+      addToast("Por favor, digite seu e-mail primeiro.", 'error');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, authEmail);
+      addToast("E-mail de recuperação enviado! Verifique sua caixa de entrada.");
+    } catch (e: any) {
+      addToast("Erro ao enviar e-mail: " + e.message, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAddMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Iniciando handleAddMaterial...", { currentUser, newMaterial });
@@ -569,7 +585,18 @@ const App: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Senha</label>
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Senha</label>
+                {isAuthMode === 'login' && (
+                  <button 
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-[10px] font-bold text-purple-500 hover:text-purple-400 uppercase tracking-widest transition-all"
+                  >
+                    Esqueceu a senha?
+                  </button>
+                )}
+              </div>
               <input 
                 type="password" 
                 placeholder="••••••••" 
