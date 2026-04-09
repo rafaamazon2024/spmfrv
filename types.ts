@@ -39,6 +39,8 @@ export interface Material {
   modules?: Module[]; // For full courses
   createdAt?: string;
   imageFit?: 'cover' | 'contain';
+  isExternal?: boolean;
+  externalUrl?: string;
 }
 
 export interface AppSettings {

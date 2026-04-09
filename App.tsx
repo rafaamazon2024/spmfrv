@@ -175,7 +175,9 @@ const App: React.FC = () => {
     videoUrl: '',
     views: 0,
     modules: [],
-    imageFit: 'cover'
+    imageFit: 'cover',
+    isExternal: false,
+    externalUrl: ''
   });
   const [toasts, setToasts] = useState<{id: string, message: string, type?: 'success' | 'error'}[]>([]);
 
@@ -401,7 +403,9 @@ const App: React.FC = () => {
         videoUrl: '',
         views: 0,
         modules: [],
-        imageFit: 'cover'
+        imageFit: 'cover',
+        isExternal: false,
+        externalUrl: ''
       });
     } catch (e: any) {
       console.error("Erro ao adicionar material:", e);
@@ -866,10 +870,16 @@ const App: React.FC = () => {
                         onClick={() => {
                           const featured = items.find(i => i.id === settings.featuredCourseId);
                           if (featured) {
+                            if (featured.isExternal && featured.externalUrl) {
+                              window.open(featured.externalUrl, '_blank');
+                              return;
+                            }
                             setSelectedItem(featured);
                             if (featured.modules && featured.modules.length > 0 && featured.modules[0].lessons.length > 0) {
                               setSelectedLesson({ moduleId: featured.modules[0].id, lessonId: featured.modules[0].lessons[0].id });
                             }
+                          } else if (settings.heroButtonLink) {
+                            window.open(settings.heroButtonLink, '_blank');
                           }
                         }}
                         className="px-8 py-4 bg-white text-black font-black rounded-2xl flex items-center gap-3 hover:scale-105 transition-all shadow-xl shadow-white/10"
@@ -903,6 +913,10 @@ const App: React.FC = () => {
                   key={item.id} 
                   className="group relative bg-[#0A0A0A] rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-purple-500/50 transition-all duration-500 cursor-pointer flex flex-col hover:shadow-[0_0_40px_rgba(147,51,234,0.1)]" 
                   onClick={() => {
+                    if (item.isExternal && item.externalUrl) {
+                      window.open(item.externalUrl, '_blank');
+                      return;
+                    }
                     setSelectedItem(item);
                     setIsEditingCourse(false);
                     if (item.modules && item.modules.length > 0 && item.modules[0].lessons.length > 0) {
@@ -1257,147 +1271,189 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* Estrutura de Módulos */}
-            <section className="space-y-8">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-purple-500">
-                  <Layers size={20} /> Módulos e Aulas
-                </h2>
+            {/* Tipo de Conteúdo */}
+            <section className="space-y-6">
+              <h2 className="text-lg lg:text-xl font-bold flex items-center gap-2 text-purple-500">
+                <Monitor size={20} /> Tipo de Entrega
+              </h2>
+              <div className="flex gap-4 p-2 bg-zinc-900 rounded-2xl border border-white/10 w-fit">
                 <button 
-                  onClick={() => {
-                    const modules = [...(selectedItem.modules || [])];
-                    modules.push({ id: Date.now().toString(), title: "Novo Módulo", order: modules.length, lessons: [] });
-                    setSelectedItem({...selectedItem, modules});
-                  }}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border border-white/10"
+                  onClick={() => setSelectedItem({...selectedItem, isExternal: false})}
+                  className={`px-6 py-3 rounded-xl font-bold text-sm transition-all ${!selectedItem.isExternal ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-500 hover:text-white'}`}
                 >
-                  <Plus size={16} /> Adicionar Módulo
+                  CONTEÚDO INTERNO (AULAS)
+                </button>
+                <button 
+                  onClick={() => setSelectedItem({...selectedItem, isExternal: true})}
+                  className={`px-6 py-3 rounded-xl font-bold text-sm transition-all ${selectedItem.isExternal ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-500 hover:text-white'}`}
+                >
+                  LINK EXTERNO (BOTÃO)
                 </button>
               </div>
 
-              <div className="space-y-6">
-                {selectedItem.modules?.map((module, mIdx) => (
-                  <div key={module.id} className="glass p-6 lg:p-8 rounded-[2rem] border border-white/10 space-y-6">
-                    <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-                      <div className="flex items-center gap-4 w-full">
-                        <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-black shrink-0">{mIdx + 1}</div>
-                        <input 
-                          type="text"
-                          value={module.title}
-                          onChange={e => {
-                            const modules = [...(selectedItem.modules || [])];
-                            modules[mIdx].title = e.target.value;
-                            setSelectedItem({...selectedItem, modules});
-                          }}
-                          className="flex-1 bg-transparent border-b border-white/10 outline-none text-lg lg:text-xl font-bold focus:border-purple-500"
-                          placeholder="Título do Módulo"
-                        />
-                      </div>
-                      <div className="flex gap-2 w-full md:w-auto justify-end">
-                        <button 
-                          onClick={() => {
-                            const modules = [...(selectedItem.modules || [])];
-                            modules[mIdx].lessons.push({ id: Date.now().toString(), title: "Nova Aula", order: modules[mIdx].lessons.length });
-                            setSelectedItem({...selectedItem, modules});
-                          }}
-                          className="flex-1 md:flex-none px-4 py-2 bg-purple-600/20 text-purple-400 rounded-lg text-[10px] font-bold hover:bg-purple-600/30 transition-all"
-                        >
-                          + Aula
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const modules = (selectedItem.modules || []).filter(m => m.id !== module.id);
-                            setSelectedItem({...selectedItem, modules});
-                          }}
-                          className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
+              {selectedItem.isExternal ? (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">URL de Destino</label>
+                  <div className="relative">
+                    <ExternalLink className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                    <input 
+                      type="url"
+                      value={selectedItem.externalUrl || ''}
+                      onChange={e => setSelectedItem({...selectedItem, externalUrl: e.target.value})}
+                      placeholder="https://exemplo.com/seu-curso"
+                      className="w-full bg-zinc-900 p-4 pl-12 rounded-xl outline-none border border-white/10 focus:border-purple-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-500 italic">Quando o aluno clicar no card, ele será levado diretamente para este link.</p>
+                </div>
+              ) : (
+                <p className="text-[10px] text-gray-500 italic animate-fade-in">O conteúdo será entregue através dos módulos e aulas configurados abaixo.</p>
+              )}
+            </section>
 
-                    <div className="md:pl-14 space-y-4">
-                      {module.lessons.map((lesson, lIdx) => (
-                        <div key={lesson.id} className="bg-white/5 p-4 lg:p-6 rounded-2xl border border-white/5 space-y-4">
-                          <div className="flex gap-4 items-center">
-                            <input 
-                              type="text"
-                              value={lesson.title}
-                              onChange={e => {
-                                const modules = [...(selectedItem.modules || [])];
-                                modules[mIdx].lessons[lIdx].title = e.target.value;
-                                setSelectedItem({...selectedItem, modules});
-                              }}
-                              className="flex-1 bg-transparent border-b border-white/10 outline-none font-bold focus:border-purple-500 text-sm"
-                              placeholder="Título da Aula"
-                            />
-                            <button 
-                              onClick={() => {
-                                const modules = [...(selectedItem.modules || [])];
-                                modules[mIdx].lessons = modules[mIdx].lessons.filter(l => l.id !== lesson.id);
-                                setSelectedItem({...selectedItem, modules});
-                              }}
-                              className="p-2 text-gray-500 hover:text-red-500 transition-all"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-gray-500 uppercase">Link do Vídeo</label>
+            {/* Estrutura de Módulos */}
+            {!selectedItem.isExternal && (
+              <section className="space-y-8 animate-fade-in">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold flex items-center gap-2 text-purple-500">
+                    <Layers size={20} /> Módulos e Aulas
+                  </h2>
+                  <button 
+                    onClick={() => {
+                      const modules = [...(selectedItem.modules || [])];
+                      modules.push({ id: Date.now().toString(), title: "Novo Módulo", order: modules.length, lessons: [] });
+                      setSelectedItem({...selectedItem, modules});
+                    }}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border border-white/10"
+                  >
+                    <Plus size={16} /> Adicionar Módulo
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {selectedItem.modules?.map((module, mIdx) => (
+                    <div key={module.id} className="glass p-6 lg:p-8 rounded-[2rem] border border-white/10 space-y-6">
+                      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                        <div className="flex items-center gap-4 w-full">
+                          <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-black shrink-0">{mIdx + 1}</div>
+                          <input 
+                            type="text"
+                            value={module.title}
+                            onChange={e => {
+                              const modules = [...(selectedItem.modules || [])];
+                              modules[mIdx].title = e.target.value;
+                              setSelectedItem({...selectedItem, modules});
+                            }}
+                            className="flex-1 bg-transparent border-b border-white/10 outline-none text-lg lg:text-xl font-bold focus:border-purple-500"
+                            placeholder="Título do Módulo"
+                          />
+                        </div>
+                        <div className="flex gap-2 w-full md:w-auto justify-end">
+                          <button 
+                            onClick={() => {
+                              const modules = [...(selectedItem.modules || [])];
+                              modules[mIdx].lessons.push({ id: Date.now().toString(), title: "Nova Aula", order: modules[mIdx].lessons.length });
+                              setSelectedItem({...selectedItem, modules});
+                            }}
+                            className="flex-1 md:flex-none px-4 py-2 bg-purple-600/20 text-purple-400 rounded-lg text-[10px] font-bold hover:bg-purple-600/30 transition-all"
+                          >
+                            + Aula
+                          </button>
+                          <button 
+                            onClick={() => {
+                              const modules = (selectedItem.modules || []).filter(m => m.id !== module.id);
+                              setSelectedItem({...selectedItem, modules});
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="md:pl-14 space-y-4">
+                        {module.lessons.map((lesson, lIdx) => (
+                          <div key={lesson.id} className="bg-white/5 p-4 lg:p-6 rounded-2xl border border-white/5 space-y-4">
+                            <div className="flex gap-4 items-center">
                               <input 
-                                type="url"
-                                value={lesson.videoUrl || ''}
+                                type="text"
+                                value={lesson.title}
                                 onChange={e => {
                                   const modules = [...(selectedItem.modules || [])];
-                                  modules[mIdx].lessons[lIdx].videoUrl = e.target.value;
+                                  modules[mIdx].lessons[lIdx].title = e.target.value;
                                   setSelectedItem({...selectedItem, modules});
                                 }}
-                                className="w-full bg-black/40 p-3 rounded-xl outline-none border border-white/5 text-xs"
-                                placeholder="YouTube, Vimeo, etc."
+                                className="flex-1 bg-transparent border-b border-white/10 outline-none font-bold focus:border-purple-500 text-sm"
+                                placeholder="Título da Aula"
                               />
+                              <button 
+                                onClick={() => {
+                                  const modules = [...(selectedItem.modules || [])];
+                                  modules[mIdx].lessons = modules[mIdx].lessons.filter(l => l.id !== lesson.id);
+                                  setSelectedItem({...selectedItem, modules});
+                                }}
+                                className="p-2 text-gray-500 hover:text-red-500 transition-all"
+                              >
+                                <X size={16} />
+                              </button>
                             </div>
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-gray-500 uppercase">Material de Apoio</label>
-                              <div className="flex gap-2">
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">Link do Vídeo</label>
                                 <input 
                                   type="url"
-                                  value={lesson.pdfUrl || ''}
+                                  value={lesson.videoUrl || ''}
                                   onChange={e => {
                                     const modules = [...(selectedItem.modules || [])];
-                                    modules[mIdx].lessons[lIdx].pdfUrl = e.target.value;
+                                    modules[mIdx].lessons[lIdx].videoUrl = e.target.value;
                                     setSelectedItem({...selectedItem, modules});
                                   }}
-                                  className="flex-1 bg-black/40 p-3 rounded-xl outline-none border border-white/5 text-xs"
-                                  placeholder="URL do arquivo"
+                                  className="w-full bg-black/40 p-3 rounded-xl outline-none border border-white/5 text-xs"
+                                  placeholder="YouTube, Vimeo, etc."
                                 />
-                                <label className="p-3 bg-white/5 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 transition-all shrink-0">
-                                  <FileText size={18} className={isUploading ? 'animate-bounce text-purple-500' : ''} />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">Material de Apoio</label>
+                                <div className="flex gap-2">
                                   <input 
-                                    type="file" 
-                                    accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg" 
-                                    className="hidden" 
-                                    onChange={e => handleFileUpload(e, 'file', (url) => {
-                                      setSelectedItem(prev => {
-                                        if (!prev) return null;
-                                        const modules = [...(prev.modules || [])];
-                                        modules[mIdx].lessons[lIdx].pdfUrl = url;
-                                        return {...prev, modules};
-                                      });
-                                    })} 
+                                    type="url"
+                                    value={lesson.pdfUrl || ''}
+                                    onChange={e => {
+                                      const modules = [...(selectedItem.modules || [])];
+                                      modules[mIdx].lessons[lIdx].pdfUrl = e.target.value;
+                                      setSelectedItem({...selectedItem, modules});
+                                    }}
+                                    className="flex-1 bg-black/40 p-3 rounded-xl outline-none border border-white/5 text-xs"
+                                    placeholder="URL do arquivo"
                                   />
-                                </label>
+                                  <label className="p-3 bg-white/5 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 transition-all shrink-0">
+                                    <FileText size={18} className={isUploading ? 'animate-bounce text-purple-500' : ''} />
+                                    <input 
+                                      type="file" 
+                                      accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg" 
+                                      className="hidden" 
+                                      onChange={e => handleFileUpload(e, 'file', (url) => {
+                                        setSelectedItem(prev => {
+                                          if (!prev) return null;
+                                          const modules = [...(prev.modules || [])];
+                                          modules[mIdx].lessons[lIdx].pdfUrl = url;
+                                          return {...prev, modules};
+                                        });
+                                      })} 
+                                    />
+                                  </label>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+            )}
           </main>
         </div>
       )}
@@ -1411,6 +1467,23 @@ const App: React.FC = () => {
             </button>
             <h2 className="text-2xl lg:text-3xl font-black mb-8 flex items-center gap-3"><Plus className="text-purple-500" /> Novo Material</h2>
             <form onSubmit={handleAddMaterial} className="space-y-6">
+              <div className="flex gap-2 p-1.5 bg-zinc-900 rounded-xl border border-white/10 w-fit mb-4">
+                <button 
+                  type="button"
+                  onClick={() => setNewMaterial({...newMaterial, isExternal: false})}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all ${!newMaterial.isExternal ? 'bg-purple-600 text-white' : 'text-gray-500'}`}
+                >
+                  INTERNO
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setNewMaterial({...newMaterial, isExternal: true})}
+                  className={`px-4 py-2 rounded-lg text-[10px] font-bold transition-all ${newMaterial.isExternal ? 'bg-purple-600 text-white' : 'text-gray-500'}`}
+                >
+                  EXTERNO
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Título</label>
@@ -1430,6 +1503,19 @@ const App: React.FC = () => {
                   {CATEGORIES.map(c => <option key={c} value={c} className="bg-zinc-900">{c}</option>)}
                 </select>
               </div>
+
+              {newMaterial.isExternal && (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Link Externo</label>
+                  <input 
+                    type="url" 
+                    value={newMaterial.externalUrl || ''} 
+                    onChange={e => setNewMaterial({...newMaterial, externalUrl: e.target.value})} 
+                    placeholder="https://..."
+                    className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500 transition-all" 
+                  />
+                </div>
+              )}
               <button type="submit" disabled={isLoading} className="w-full py-5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3">
                 {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                 CRIAR E EDITAR DEPOIS
