@@ -21,7 +21,7 @@ export const INITIAL_MATERIALS: Material[] = [
     views: 1240,
     comments: [],
     isReadBy: [],
-    gradient: 'from-purple-600 via-pink-500 to-red-500'
+    gradient: 'from-amber-600 via-orange-500 to-yellow-500'
   },
   {
     id: '2',
@@ -69,7 +69,7 @@ export const INITIAL_MATERIALS: Material[] = [
     views: 120,
     comments: [],
     isReadBy: [],
-    gradient: 'from-pink-500 to-rose-700'
+    gradient: 'from-amber-400 to-orange-600'
   },
   {
     id: '9',
@@ -81,6 +81,6 @@ export const INITIAL_MATERIALS: Material[] = [
     views: 1560,
     comments: [],
     isReadBy: [],
-    gradient: 'from-violet-500 to-purple-800'
+    gradient: 'from-amber-500 to-orange-700'
   }
 ];

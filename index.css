@@ -20,12 +20,33 @@
     @apply bg-gray-900/60 backdrop-blur-xl border border-white/5;
   }
   
-  .text-gradient-primary {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500;
+  @keyframes rotate-light {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.rotating-light {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    transparent, 
+    rgba(245, 158, 11, 0.08), 
+    transparent 30%
+  );
+  animation: rotate-light 10s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.text-gradient-primary {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500;
   }
   
   .bg-gradient-primary {
-    @apply bg-gradient-to-br from-purple-600 to-pink-600;
+    @apply bg-gradient-to-br from-amber-500 to-orange-600;
   }
 }
 
@@ -86,7 +107,7 @@
 }
 
 .neon-border {
-  box-shadow: 0 0 15px rgba(147, 51, 234, 0.3);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
 }
 
 .card-glow {
@@ -103,9 +124,9 @@
   height: 200%;
   background: conic-gradient(
     transparent,
-    rgba(147, 51, 234, 0.1),
-    rgba(147, 51, 234, 0.2),
-    rgba(147, 51, 234, 0.1),
+    rgba(255, 215, 0, 0.05),
+    rgba(255, 215, 0, 0.15),
+    rgba(255, 215, 0, 0.05),
     transparent
   );
   animation: rotate-bg 6s linear infinite;
