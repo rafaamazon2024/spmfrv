@@ -544,13 +544,56 @@ const App: React.FC = () => {
           </button>
 
           <form onSubmit={handleAuth} className="space-y-4 text-left">
-            <input type="email" placeholder="E-mail" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10" required />
-            <input type="password" placeholder="Senha" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10" required />
-            <button type="submit" disabled={isLoading} className="w-full py-4 bg-purple-600 font-bold rounded-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2">
-              {isLoading && <Loader2 className="animate-spin" size={18} />} Entrar
+            {isAuthMode === 'register' && (
+              <div className="space-y-2 animate-fade-in">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Nome Completo</label>
+                <input 
+                  type="text" 
+                  placeholder="Seu nome" 
+                  value={authName} 
+                  onChange={e => setAuthName(e.target.value)} 
+                  className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500 transition-all" 
+                  required 
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">E-mail</label>
+              <input 
+                type="email" 
+                placeholder="seu@email.com" 
+                value={authEmail} 
+                onChange={e => setAuthEmail(e.target.value)} 
+                className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500 transition-all" 
+                required 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Senha</label>
+              <input 
+                type="password" 
+                placeholder="••••••••" 
+                value={authPassword} 
+                onChange={e => setAuthPassword(e.target.value)} 
+                className="w-full bg-zinc-900 p-4 rounded-xl outline-none border border-white/10 focus:border-purple-500 transition-all" 
+                required 
+              />
+            </div>
+            <button type="submit" disabled={isLoading} className="w-full py-4 bg-purple-600 font-bold rounded-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/20">
+              {isLoading && <Loader2 className="animate-spin" size={18} />} 
+              {isAuthMode === 'login' ? 'Entrar' : 'Criar Conta'}
             </button>
           </form>
-          <p className="text-xs text-gray-500">Dica Admin: admin@academia.com / admin123</p>
+
+          <div className="pt-4 border-t border-white/5">
+            <button 
+              onClick={() => setIsAuthMode(isAuthMode === 'login' ? 'register' : 'login')}
+              className="text-sm text-gray-400 hover:text-purple-400 transition-all font-medium"
+            >
+              {isAuthMode === 'login' ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Faça login'}
+            </button>
+          </div>
+
           <div className="fixed top-4 right-4 space-y-2">
             {toasts.map(t => <div key={t.id} className={`p-4 rounded-xl text-xs font-bold ${t.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>{t.message}</div>)}
           </div>
